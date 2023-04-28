@@ -9,6 +9,6 @@
     <script src="scripts/script.js"></script>
 </head>
 <body>
-    
+    <?php echo 'texto en php!'; ?>
 </body>
 </html>
