@@ -13,10 +13,41 @@ abstract class Action
   const Modify_Delete = 5;
 };
 
-$action = Data::Post('action', Action::None);
+$action = (int)Data::Post('action', Action::None);
 if (!Session::Logged())
 {
   $action = Action::None;
+}
+
+$title = Data::Post('title');
+$content = Data::Post('content');
+$id = (int)Data::Post('id', 0);
+
+// Changes are saved before anything is printed, then the page is loaded again
+// (a reload does not post them twice)
+if ($action == Action::Add_Confirm)
+{
+    $stmt = $pdo->prepare("insert into `news` set `title` = :t, `content` = :c, `date` = NOW()");
+    $stmt->bindParam(":t", $title, PDO::PARAM_STR);
+    $stmt->bindParam(":c", $content, PDO::PARAM_STR);
+    $stmt->execute();
+    Page::Redirect('index.php');
+}
+else if ($action == Action::Modify_Confirm)
+{
+    $stmt = $pdo->prepare("update `news` set `title` = :t, `content`= :c where `id` = :id limit 1");
+    $stmt->bindParam(":t", $title, PDO::PARAM_STR);
+    $stmt->bindParam(":c", $content, PDO::PARAM_STR);
+    $stmt->bindParam(":id", $id, PDO::PARAM_INT);
+    $stmt->execute();
+    Page::Redirect('index.php');
+}
+else if ($action == Action::Modify_Delete)
+{
+    $stmt = $pdo->prepare("delete from `news` where `id` = :id limit 1");
+    $stmt->bindParam(":id", $id, PDO::PARAM_INT);
+    $stmt->execute();
+    Page::Redirect('index.php');
 }
 
 ?>
@@ -30,9 +61,9 @@ if (!Session::Logged())
     <title>Helbreath Fury</title>
 </head>
 <body>
-    <?php 
+    <?php
         RenderCommonBody();
-        
+
         if (Session::Logged() && $action != Action::Add && $action != Action::Modify)
         {
         ?>
@@ -45,21 +76,18 @@ if (!Session::Logged())
         <?php
         }
 
-        $title = Data::Post('title');
-        $content = Data::Post('content');
-        $id = Data::Post('id');
-        
         if ($action == Action::Add || $action == Action::Modify)
         {
             $m = $id != 0;
-            $title = $m ? "Modify entry" : "Add new entry";
-        
+            $title = "";
+            $content = "";
+
             if ($m)
             {
                 $stmt = $pdo->prepare("select * from `news` where `id` = :id limit 1");
                 $stmt->bindParam(":id", $id, PDO::PARAM_INT);
                 $stmt->execute();
-            
+
                 foreach($stmt as $row)
                 {
                     $title = $row['title'];
@@ -69,9 +97,9 @@ if (!Session::Logged())
             ?>
             <div class="card">
                 <form class="pure-form pure-form-aligned" method="post">
-                    Input: <input style="width: 80%" maxlength="50" type="text" name="title" <?php echo $m ? 'value="'.$title.'"' : ''; ?> placeholder="Post title" required><br>
+                    Input: <input style="width: 80%" maxlength="50" type="text" name="title" value="<?php echo Html::Escape($title); ?>" placeholder="Post title" required><br>
                     <fieldset>
-                    <textarea name="content" rows="10" cols="80" placeholder="Post content"><?php echo $content; ?></textarea>
+                    <textarea name="content" rows="10" cols="80" placeholder="Post content"><?php echo Html::Escape($content); ?></textarea>
                     </fieldset>
                     <button type="submit" name="action" value="<?php echo $m ? Action::Modify_Confirm : Action::Add_Confirm; ?>" ><?php echo $m ? "Modify" : "Add"; ?></button>
                     <?php
@@ -79,7 +107,7 @@ if (!Session::Logged())
                     {
                     Form::AddHidden("id", $id);
                     ?>
-                    <button type="submit" name="action" value="<?php echo Action::Modify_Delete; ?>">Delete whole entry</button>
+                    <button type="submit" name="action" value="<?php echo Action::Modify_Delete; ?>" onclick="return confirm('Delete this entry?');">Delete whole entry</button>
                     <?php
                     }
                     ?>
@@ -89,43 +117,23 @@ if (!Session::Logged())
                 </div>
                 <?php
             }
-            else if ($action == Action::Add_Confirm)
-            {
-                $stmt = $pdo->prepare("insert into `news` set `title` = :t, `content` = :c, `date` = NOW()");
-                $stmt->bindParam(":t", $title, PDO::PARAM_STR);
-                $stmt->bindParam(":c", $content, PDO::PARAM_STR);
-                $stmt->execute();
-            }
-            else if ($action == Action::Modify_Confirm)
-            {
-                $stmt = $pdo->prepare("update `news` set `title` = :t, `content`= :c where `id` = :id limit 1");
-                $stmt->bindParam(":t", $title, PDO::PARAM_STR);
-                $stmt->bindParam(":c", $content, PDO::PARAM_STR);
-                $stmt->bindParam(":id", $id, PDO::PARAM_INT);
-                $stmt->execute();
-            }
-            else if ($action == Action::Modify_Delete)
-            {
-                $stmt = $pdo->prepare("delete from `news` where `id` = :id limit 1");
-                $stmt->bindParam(":id", $id, PDO::PARAM_INT);
-                $stmt->execute();
-            }
-            
+
             $stmt = $pdo->prepare("select * from `news` order by `id` desc;");
             $stmt->execute();
-            
-            if ($stmt->rowCount() == 0)
+            $rows = $stmt->fetchAll();
+
+            if (count($rows) == 0)
             {
                 echo '<br>';
             }
-            
-            foreach($stmt as $row)
+
+            foreach($rows as $row)
             {
                 echo '
                 <div class="card">
-                <h3>'.$row['title'].'</h3>
-                <p>'.$row['content'].'</p>';
-                
+                <h3>'.Html::Escape($row['title']).'</h3>
+                <p>'.Html::Paragraph($row['content']).'</p>';
+
                 if (Session::Logged())
                 {
                 ?>
@@ -138,9 +146,9 @@ if (!Session::Logged())
                 </form>
                 <br>
                 <?php
-                } 
-            echo '</div>'; 
-            } 
+                }
+            echo '</div>';
+            }
             ?>
             </div>
         </section>

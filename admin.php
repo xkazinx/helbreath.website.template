@@ -16,16 +16,11 @@ function AddHiddenAction($action)
 }
 
 $action = Data::Post('action', Action::None);
+$failed = false;
 
 if (!Session::Logged() && $action == Action::LogIn)
 {
-  $pw = Data::Post('pw');
-
-  if ($pw == "aKfasd6Ws412afashg")
-  {
-    Session::LogIn();
-    $pw = "__valid_token__";
-  }
+  $failed = !Session::LogIn(Data::Post('pw'));
 }
 
 $logged = Session::Logged();
@@ -45,7 +40,7 @@ if ($logged)
     <?php
         PrintCommonHeadProperties();
     ?>
-    <title>Helbreath Fury - Cash Shop</title>
+    <title>Helbreath Fury - Admin</title>
 </head>
 <body>
     <?php
@@ -56,6 +51,7 @@ if ($logged)
 if ($logged)
 {
     ?>
+    <p>Logged in: the news on <a href="index.php">Home</a> can be added, modified and deleted.</p>
     <form method="post">
     <?php AddHiddenAction(Action::LogOut); ?>
       <input type="submit" value="Log Out">
@@ -66,14 +62,18 @@ else
 {
 ?>
     <form method="post">
-    Password: <input type="password" name="pw" value="">
+    Password: <input type="password" name="pw" value="" required>
     <?php AddHiddenAction(Action::LogIn); ?>
     <input type="submit" value="Log In">
   </form>
-</div>
 <?php
+    if ($failed)
+    {
+        echo '<p>Wrong password.</p>';
+    }
 }
 ?>
+</div>
 </div>
 </section>
 </section>

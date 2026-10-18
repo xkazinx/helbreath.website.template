@@ -30,11 +30,25 @@ function RenderCard($title, $description)
 {
     echo '
     <div class="card">
-        <h3>'.$title.'</h3>
-        <p>'.$description.'</p>
+        <h3>'.Html::Escape($title).'</h3>
+        <p>'.Html::Escape($description).'</p>
     </div>';
 }
 
+class Html
+{
+  // Text from the database or the request, made safe to print inside HTML.
+  public static function Escape($str)
+  {
+    return htmlspecialchars((string)$str, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+  }
+
+  // Escaped, with its line breaks kept.
+  public static function Paragraph($str)
+  {
+    return nl2br(Html::Escape($str));
+  }
+};
 
 class Page
 {
@@ -57,64 +71,45 @@ class Page
   {
     return $_SERVER['REMOTE_ADDR'];
   }
+
+  public static function Redirect($url)
+  {
+    header('location:'.$url);
+    exit;
+  }
+};
+
+// The site's settings: config.php (git-ignored, made from config.sample.php).
+class Config
+{
+  private static $cfg = null;
+
+  public static function Get($key)
+  {
+    if (Config::$cfg === null)
+    {
+      $file = __DIR__.'/config.php';
+
+      if (!file_exists($file))
+      {
+        http_response_code(500);
+        exit('config.php is missing: copy config.sample.php to config.php and fill it in.');
+      }
+
+      Config::$cfg = require $file;
+    }
+
+    return Config::$cfg[$key] ?? null;
+  }
 };
 
 class DB
 {
-  public $host;
-  public $port;
-  public $user;
-  public $pass;
-  public $db;
-
-  function __construct($port, $host, $user, $pass, $db)
+  public static function Init()
   {
-    $this->host = $host;
-    $this->port = $port;
-    $this->user = $user;
-    $this->pass = $pass;
-    $this->db = $db;
-  }
-
-  public static function Local()
-  {
-    return file_exists("localdb.php");
-  }
-
-  public static function Auth($gamedb = false)
-  {
-    $auth = null;
-
-    if (DB::Local())
-    {
-      if ($gamedb)
-      {
-        $auth = new DB("3307", "localhost", "root", "root", "hbsite");
-      }
-      else
-      {
-        $auth = new DB("3307", "localhost", "root", "root", "hbsite");
-      }
-    }
-    else
-    {
-      if ($gamedb)
-      {
-        $auth = new DB("3307", "localhost", "root", "root", "hbsite");
-      }
-      else
-      {
-        $auth = new DB("3307", "localhost", "root", "root", "hbsite");
-      }
-    }
-
-    return $auth;
-  }
-
-  public static function Init($gamedb = false)
-  {
-    $auth = DB::Auth($gamedb);
-    return new PDO('mysql:host='.$auth->host.';port='.$auth->port.';dbname='.$auth->db.'', $auth->user, $auth->pass);
+    $db = Config::Get('db');
+    $dsn = 'mysql:host='.$db['host'].';port='.$db['port'].';dbname='.$db['name'].';charset=utf8mb4';
+    return new PDO($dsn, $db['user'], $db['pass'], [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
   }
 };
 
@@ -125,27 +120,43 @@ class Session
     if (!headers_sent())
     {
       header('cache:private');
-      
     }
+
     if (!Session::Is())
-      {
-        session_start();
-      }
+    {
+      // SameSite=Lax: another site's form posts arrive without the admin's session
+      session_set_cookie_params([
+        'httponly' => true,
+        'samesite' => 'Lax',
+        'secure' => !empty($_SERVER['HTTPS']) || ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') == 'https',
+      ]);
+      session_start();
+    }
   }
 
   public static function Is()
   {
-    return session_status() != PHP_SESSION_NONE;
+    return session_status() == PHP_SESSION_ACTIVE;
   }
 
   public static function Logged()
   {
-    return isset($_SESSION['user']) && $_SESSION['user'] == "kjASJHKgsaduiSDASAYT";
+    return !empty($_SESSION['admin']);
   }
 
-  public static function LogIn()
+  // The admin password is checked against config.php's admin_hash (password_hash).
+  public static function LogIn($pw)
   {
-    $_SESSION['user'] = "kjASJHKgsaduiSDASAYT";
+    $hash = Config::Get('admin_hash');
+
+    if (!$hash || !password_verify($pw, $hash))
+    {
+      return false;
+    }
+
+    session_regenerate_id(true);
+    $_SESSION['admin'] = true;
+    return true;
   }
 
   public static function LogOut($url = "")
@@ -155,8 +166,9 @@ class Session
       $url = Page::GetCurrentFile().".php";
     }
 
+    $_SESSION = [];
     session_destroy();
-    header('location:'.$url);
+    Page::Redirect($url);
   }
 };
 
@@ -164,7 +176,7 @@ class Form
 {
   public static function AddHidden($name, $value)
   {
-    echo '<input type="hidden" name="'.$name.'" value="'.$value.'">';
+    echo '<input type="hidden" name="'.Html::Escape($name).'" value="'.Html::Escape($value).'">';
   }
 };
 
@@ -215,10 +227,10 @@ class Data
 function RenderCommonBody()
 {
     RenderNavbar();
-    
+
     echo '<section class="main">
         <h1>Helbreath Fury</h1>
-        
+
         <section class="news">
             <div class="news-cards">';
 }
